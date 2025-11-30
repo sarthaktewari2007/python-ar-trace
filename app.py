@@ -80,7 +80,6 @@ if uploaded_file:
     st.info("Scroll down. Place your phone on a glass or stand above your paper.")
 
     # We inject specific HTML/JS to handle the camera locally on the phone
-    # This prevents the 'lag' of sending video back and forth to the server
     html_code = f"""
     <!DOCTYPE html>
     <html>
@@ -90,7 +89,7 @@ if uploaded_file:
         .container {{ position: relative; width: 100%; height: 600px; overflow: hidden; border-radius: 12px; }}
         #camera-video {{ 
             width: 100%; height: 100%; object-fit: cover; 
-            transform: scaleX(-1); /* Mirror effect for easier alignment */
+            /* transform: scaleX(-1); REMOVED MIRRORING */
         }}
         #overlay-wrapper {{
             position: absolute; top: 0; left: 0; width: 100%; height: 100%;
@@ -101,7 +100,6 @@ if uploaded_file:
             width: 80%;
             opacity: 0.5;
             transform-origin: center;
-            /* Filter to make white transparent if it's line art (optional visual hack) */
             mix-blend-mode: multiply; 
         }}
         .controls {{
