@@ -80,15 +80,18 @@ def draw_grid(image, grid_size=3):
         cv2.line(image, (0, y), (w, y), color, 2)
     return image
 
-def process_image(pil_image, mode, t1, t2, rotation, brightness, contrast, show_grid, crop_vals):
+# Split processing into two stages for better UI response
+def apply_geometric_transforms(pil_image, rotation, crop_vals):
     # 1. Convert PIL to OpenCV
     img_array = np.array(pil_image.convert('RGB'))
     img_cv = cv2.cvtColor(img_array, cv2.COLOR_RGB2BGR)
     
-    # 2. Geometric Transforms
+    # 2. Rotate & Crop
     img_cv = rotate_image(img_cv, rotation)
     img_cv = crop_image(img_cv, *crop_vals)
+    return img_cv
 
+def apply_artistic_filters(img_cv, mode, t1, t2, brightness, contrast, show_grid):
     # 3. Color Corrections
     img_cv = adjust_brightness_contrast(img_cv, contrast, brightness)
 
@@ -112,15 +115,12 @@ def process_image(pil_image, mode, t1, t2, rotation, brightness, contrast, show_
         final_img = cv2.cvtColor(sketch, cv2.COLOR_GRAY2BGR)
         
     elif mode == "Crayon Drawing":
-        # Bilateral filter for smoothing colors but keeping edges
         final_img = cv2.bilateralFilter(img_cv, 9, 75, 75)
-        # Add slight edge overlay
         gray = cv2.cvtColor(final_img, cv2.COLOR_BGR2GRAY)
         edges = cv2.adaptiveThreshold(gray, 255, cv2.ADAPTIVE_THRESH_MEAN_C, cv2.THRESH_BINARY, 9, 9)
         final_img = cv2.bitwise_and(final_img, final_img, mask=edges)
 
     elif mode == "Abstract":
-        # Mean shift filtering for cartoon/flat look
         final_img = cv2.pyrMeanShiftFiltering(img_cv, 21, 51)
         
     elif mode == "Negative":
@@ -148,24 +148,37 @@ with st.container():
     st.markdown("</div>", unsafe_allow_html=True)
 
 if uploaded_file:
-    image = Image.open(uploaded_file)
+    original_image = Image.open(uploaded_file)
     
-    # --- CROP TOOL ---
-    with st.expander("✂️ Crop & Rotate", expanded=False):
+    # --- STEP 1: GEOMETRY (Immediate Crop Preview) ---
+    st.markdown("### ✂️ Step 1: Crop & Rotate")
+    with st.container():
         c_rot1, c_rot2 = st.columns(2)
         if c_rot1.button("↺ Rotate Left"): st.session_state.rotation = (st.session_state.rotation + 1) % 4
         if c_rot2.button("↻ Rotate Right"): st.session_state.rotation = (st.session_state.rotation - 1) % 4
         
-        st.write("Crop Image Edges (%)")
+        st.write("**Crop Edges (%)**")
         cr1, cr2 = st.columns(2)
-        crop_top = cr1.slider("Top", 0, 50, 0)
-        crop_bottom = cr2.slider("Bottom", 0, 50, 0)
+        crop_top = cr1.slider("Top Cut", 0, 50, 0)
+        crop_bottom = cr2.slider("Bottom Cut", 0, 50, 0)
         cr3, cr4 = st.columns(2)
-        crop_left = cr3.slider("Left", 0, 50, 0)
-        crop_right = cr4.slider("Right", 0, 50, 0)
+        crop_left = cr3.slider("Left Cut", 0, 50, 0)
+        crop_right = cr4.slider("Right Cut", 0, 50, 0)
 
-    # --- FILTERS & PROCESSING ---
-    with st.expander("🎨 Filters & Adjustments", expanded=True):
+        # Apply Geometric Transforms Immediately
+        geo_img = apply_geometric_transforms(
+            original_image, 
+            st.session_state.rotation, 
+            (crop_left, crop_right, crop_top, crop_bottom)
+        )
+        
+        # Show Geometric Preview
+        with st.expander("Show Crop Preview", expanded=True):
+            st.image(cv2.cvtColor(geo_img, cv2.COLOR_BGR2RGB), caption="Cropped Layout", use_container_width=True)
+
+    # --- STEP 2: ARTISTIC FILTERS ---
+    st.markdown("### 🎨 Step 2: Filters & Effects")
+    with st.expander("Filter Controls", expanded=True):
         mode = st.selectbox("Select Filter", ["Original", "Grayscale", "Magic Outline", "Pencil Sketch", "Crayon Drawing", "Abstract", "Sepia", "Negative"])
         
         ac1, ac2 = st.columns(2)
@@ -179,24 +192,33 @@ if uploaded_file:
             
         show_grid = st.checkbox("Show Artist Grid (3x3)")
 
-    # --- PROCESS IMAGE ---
-    processed_img = process_image(
-        image, mode, t1, t2, 
-        st.session_state.rotation, brightness, contrast, show_grid,
-        (crop_left, crop_right, crop_top, crop_bottom)
+    # Apply Artistic Filters to the Geometrically Transformed Image
+    final_processed_img = apply_artistic_filters(
+        geo_img, mode, t1, t2, brightness, contrast, show_grid
     )
-    img_b64 = get_image_base64(processed_img)
+    img_b64 = get_image_base64(final_processed_img)
 
-    # --- PREVIEW ---
-    with st.expander("👁️ Generated Preview", expanded=False):
-        if len(processed_img.shape) > 2:
-            st.image(processed_img, channels="BGR", use_container_width=True)
+    # --- FINAL PREVIEW & DOWNLOAD ---
+    with st.expander("👁️ Final Result", expanded=False):
+        if len(final_processed_img.shape) > 2:
+            st.image(final_processed_img, channels="BGR", use_container_width=True)
+            pil_result = Image.fromarray(cv2.cvtColor(final_processed_img, cv2.COLOR_BGR2RGB))
         else:
-            st.image(processed_img, use_container_width=True)
+            st.image(final_processed_img, use_container_width=True)
+            pil_result = Image.fromarray(final_processed_img)
+            
+        buf = BytesIO()
+        pil_result.save(buf, format="PNG")
+        st.download_button(
+            label="💾 Download Processed Image",
+            data=buf.getvalue(),
+            file_name="glass_canvas_trace.png",
+            mime="image/png"
+        )
 
-    # --- CAMERA OVERLAY (WITH JS CONTROLS) ---
+    # --- CAMERA OVERLAY ---
     st.markdown("---")
-    st.markdown("### 📱 AR Tracing Surface")
+    st.markdown("### 📱 Step 3: AR Tracing Surface")
     st.info("Controls are now below the video. Use 'Flip' to mirror image.")
 
     html_code = f"""
