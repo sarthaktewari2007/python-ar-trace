@@ -150,7 +150,7 @@ with st.container():
 if uploaded_file:
     original_image = Image.open(uploaded_file)
     
-    # --- STEP 1: GEOMETRY (Immediate Crop Preview) ---
+    # --- STEP 1: GEOMETRY ---
     st.markdown("### ✂️ Step 1: Crop & Rotate")
     with st.container():
         c_rot1, c_rot2 = st.columns(2)
@@ -165,7 +165,6 @@ if uploaded_file:
         crop_left = cr3.slider("Left Cut", 0, 50, 0)
         crop_right = cr4.slider("Right Cut", 0, 50, 0)
 
-        # Apply Geometric Transforms Immediately
         geo_img = apply_geometric_transforms(
             original_image, 
             st.session_state.rotation, 
@@ -173,11 +172,12 @@ if uploaded_file:
         )
         
         # Show Geometric Preview
-        with st.expander("Show Crop Preview", expanded=True):
+        with st.expander("Show Crop Preview", expanded=False):
             st.image(cv2.cvtColor(geo_img, cv2.COLOR_BGR2RGB), caption="Cropped Layout", use_container_width=True)
 
     # --- STEP 2: ARTISTIC FILTERS ---
     st.markdown("### 🎨 Step 2: Filters & Effects")
+    # Expander is now closer to the AR surface
     with st.expander("Filter Controls", expanded=True):
         mode = st.selectbox("Select Filter", ["Original", "Grayscale", "Magic Outline", "Pencil Sketch", "Crayon Drawing", "Abstract", "Sepia", "Negative"])
         
@@ -192,34 +192,15 @@ if uploaded_file:
             
         show_grid = st.checkbox("Show Artist Grid (3x3)")
 
-    # Apply Artistic Filters to the Geometrically Transformed Image
+    # Processing happens here to feed into Step 3 immediately
     final_processed_img = apply_artistic_filters(
         geo_img, mode, t1, t2, brightness, contrast, show_grid
     )
     img_b64 = get_image_base64(final_processed_img)
 
-    # --- FINAL PREVIEW & DOWNLOAD ---
-    with st.expander("👁️ Final Result", expanded=False):
-        if len(final_processed_img.shape) > 2:
-            st.image(final_processed_img, channels="BGR", use_container_width=True)
-            pil_result = Image.fromarray(cv2.cvtColor(final_processed_img, cv2.COLOR_BGR2RGB))
-        else:
-            st.image(final_processed_img, use_container_width=True)
-            pil_result = Image.fromarray(final_processed_img)
-            
-        buf = BytesIO()
-        pil_result.save(buf, format="PNG")
-        st.download_button(
-            label="💾 Download Processed Image",
-            data=buf.getvalue(),
-            file_name="glass_canvas_trace.png",
-            mime="image/png"
-        )
-
-    # --- CAMERA OVERLAY ---
-    st.markdown("---")
+    # --- STEP 3: AR TRACING SURFACE ---
     st.markdown("### 📱 Step 3: AR Tracing Surface")
-    st.info("Controls are now below the video. Use 'Flip' to mirror image.")
+    st.info("Controls below video. Use 'Max' for Full Screen.")
 
     html_code = f"""
     <!DOCTYPE html>
@@ -228,7 +209,20 @@ if uploaded_file:
     <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;700&display=swap" rel="stylesheet">
     <style>
         body {{ margin: 0; background: #000; font-family: 'Space Grotesk', sans-serif; overflow: hidden; }}
-        .container {{ position: relative; width: 100%; height: 600px; border-radius: 12px; border: 2px solid #6366f1; overflow: hidden; }}
+        .container {{ position: relative; width: 100%; height: 600px; border-radius: 12px; border: 2px solid #6366f1; overflow: hidden; background: #000; }}
+        
+        /* Full Screen Class */
+        .fullscreen {{
+            position: fixed !important;
+            top: 0 !important;
+            left: 0 !important;
+            width: 100vw !important;
+            height: 100vh !important;
+            z-index: 9999 !important;
+            border-radius: 0 !important;
+            border: none !important;
+        }}
+
         video {{ width: 100%; height: 100%; object-fit: cover; }}
         #overlay {{ position: absolute; top: 0; left: 0; width: 100%; height: 100%; pointer-events: none; display: flex; justify-content: center; align-items: center; }}
         #trace-img {{ width: 80%; opacity: 0.5; transition: transform 0.2s; }}
@@ -252,13 +246,14 @@ if uploaded_file:
         .btn-lock {{ background: #4f46e5; }}
         .btn-torch {{ background: #f59e0b; color: black; }}
         .btn-flip {{ background: #0ea5e9; }}
+        .btn-max {{ background: #ec4899; }}
         
         input[type=range] {{ width: 100%; accent-color: #8E2DE2; }}
         label {{ font-size: 12px; color: #cbd5e1; }}
     </style>
     </head>
     <body>
-    <div class="container">
+    <div id="app-container" class="container">
         <video id="video" autoplay playsinline></video>
         <div id="overlay"><img id="trace-img" src="{img_b64}"></div>
         
@@ -285,13 +280,16 @@ if uploaded_file:
             <div class="row">
                 <button class="btn-lock" onclick="toggleLock()">🔒 Lock</button>
                 <button class="btn-torch" onclick="toggleTorch()">🔦 Light</button>
+                <button class="btn-max" onclick="toggleFullScreen()">⛶ Max</button>
             </div>
         </div>
     </div>
     <script>
+        const container = document.getElementById('app-container');
         const video = document.getElementById('video');
         const img = document.getElementById('trace-img');
         let isLocked = false;
+        let isFull = false;
         let stream = null;
         let scaleX = 1; 
         let scaleY = 1;
@@ -348,10 +346,40 @@ if uploaded_file:
                 track.applyConstraints({{ advanced: [{{ torch: !track.getSettings().torch }}] }});
             }} else {{ alert("Flashlight not available"); }}
         }}
+
+        function toggleFullScreen() {{
+            isFull = !isFull;
+            if (isFull) {{
+                container.classList.add('fullscreen');
+                document.querySelector('.btn-max').innerText = "↘ Min";
+            }} else {{
+                container.classList.remove('fullscreen');
+                document.querySelector('.btn-max').innerText = "⛶ Max";
+            }}
+        }}
     </script>
     </body>
     </html>
     """
     st.components.v1.html(html_code, height=620)
+
+    # --- FINAL PREVIEW & DOWNLOAD (Moved to bottom) ---
+    st.markdown("---")
+    with st.expander("💾 Download & Preview", expanded=False):
+        if len(final_processed_img.shape) > 2:
+            st.image(final_processed_img, channels="BGR", use_container_width=True)
+            pil_result = Image.fromarray(cv2.cvtColor(final_processed_img, cv2.COLOR_BGR2RGB))
+        else:
+            st.image(final_processed_img, use_container_width=True)
+            pil_result = Image.fromarray(final_processed_img)
+            
+        buf = BytesIO()
+        pil_result.save(buf, format="PNG")
+        st.download_button(
+            label="💾 Download Processed Image",
+            data=buf.getvalue(),
+            file_name="glass_canvas_trace.png",
+            mime="image/png"
+        )
 else:
     st.info("👆 Please upload an image to begin.")
