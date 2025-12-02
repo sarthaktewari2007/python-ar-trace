@@ -198,7 +198,27 @@ if uploaded_file:
     )
     img_b64 = get_image_base64(final_processed_img)
 
+    # --- PREVIEW & DOWNLOAD (MOVED HERE: After Step 2, Before Step 3) ---
+    st.markdown("### 👁️ Result Preview")
+    with st.expander("Check Final Image", expanded=True):
+        if len(final_processed_img.shape) > 2:
+            st.image(final_processed_img, channels="BGR", use_container_width=True)
+            pil_result = Image.fromarray(cv2.cvtColor(final_processed_img, cv2.COLOR_BGR2RGB))
+        else:
+            st.image(final_processed_img, use_container_width=True)
+            pil_result = Image.fromarray(final_processed_img)
+            
+        buf = BytesIO()
+        pil_result.save(buf, format="PNG")
+        st.download_button(
+            label="💾 Download Processed Image",
+            data=buf.getvalue(),
+            file_name="glass_canvas_trace.png",
+            mime="image/png"
+        )
+
     # --- STEP 3: AR TRACING SURFACE ---
+    st.markdown("---")
     st.markdown("### 📱 Step 3: AR Tracing Surface")
     st.info("Controls below video. Use 'Record' to capture your process.")
 
@@ -375,10 +395,17 @@ if uploaded_file:
         function toggleRecord() {{
             const btn = document.querySelector('.btn-rec');
             if (!isRecording) {{
-                // Start Recording
+                // Determine Supported MimeType (Try MP4 first, fallback to WebM)
+                let mimeType = 'video/webm';
+                let ext = 'webm';
+                
+                if (MediaRecorder.isTypeSupported('video/mp4')) {{
+                    mimeType = 'video/mp4';
+                    ext = 'mp4';
+                }}
+                
                 recordedChunks = [];
-                // Record the camera stream
-                mediaRecorder = new MediaRecorder(stream, {{ mimeType: 'video/webm' }});
+                mediaRecorder = new MediaRecorder(stream, {{ mimeType: mimeType }});
                 
                 mediaRecorder.ondataavailable = function(event) {{
                     if (event.data.size > 0) {{
@@ -387,13 +414,13 @@ if uploaded_file:
                 }};
                 
                 mediaRecorder.onstop = function() {{
-                    const blob = new Blob(recordedChunks, {{ type: 'video/webm' }});
+                    const blob = new Blob(recordedChunks, {{ type: mimeType }});
                     const url = URL.createObjectURL(blob);
                     const a = document.createElement('a');
                     document.body.appendChild(a);
                     a.style = 'display: none';
                     a.href = url;
-                    a.download = 'glass_canvas_recording.webm';
+                    a.download = `glass_canvas_recording.${{ext}}`;
                     a.click();
                     window.URL.revokeObjectURL(url);
                 }};
@@ -403,7 +430,6 @@ if uploaded_file:
                 btn.innerText = "⬛ Stop";
                 btn.classList.add('recording');
             }} else {{
-                // Stop Recording
                 mediaRecorder.stop();
                 isRecording = false;
                 btn.innerText = "🔴 Record";
@@ -416,23 +442,5 @@ if uploaded_file:
     """
     st.components.v1.html(html_code, height=620)
 
-    # --- FINAL PREVIEW & DOWNLOAD (Moved to bottom) ---
-    st.markdown("---")
-    with st.expander("💾 Download & Preview", expanded=False):
-        if len(final_processed_img.shape) > 2:
-            st.image(final_processed_img, channels="BGR", use_container_width=True)
-            pil_result = Image.fromarray(cv2.cvtColor(final_processed_img, cv2.COLOR_BGR2RGB))
-        else:
-            st.image(final_processed_img, use_container_width=True)
-            pil_result = Image.fromarray(final_processed_img)
-            
-        buf = BytesIO()
-        pil_result.save(buf, format="PNG")
-        st.download_button(
-            label="💾 Download Processed Image",
-            data=buf.getvalue(),
-            file_name="glass_canvas_trace.png",
-            mime="image/png"
-        )
 else:
     st.info("👆 Please upload an image to begin.")
