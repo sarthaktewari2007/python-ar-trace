@@ -49,9 +49,9 @@ def get_image_base64(image_array):
     pil_img.save(buff, format="PNG")
     return f"data:image/png;base64,{base64.b64encode(buff.getvalue()).decode()}"
 
-def rotate_image(image, angle):
-    if angle == 0: return image
-    k = angle // 90
+def rotate_image(image, k):
+    # k is the number of 90-degree turns (0, 1, 2, 3)
+    if k % 4 == 0: return image
     return np.rot90(image, k=k)
 
 def crop_image(image, left_p, right_p, top_p, bottom_p):
