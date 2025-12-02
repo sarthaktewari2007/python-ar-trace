@@ -200,7 +200,7 @@ if uploaded_file:
 
     # --- STEP 3: AR TRACING SURFACE ---
     st.markdown("### 📱 Step 3: AR Tracing Surface")
-    st.info("Controls below video. Use 'Max' for Full Screen.")
+    st.info("Controls below video. Use 'Record' to capture your process.")
 
     html_code = f"""
     <!DOCTYPE html>
@@ -247,6 +247,14 @@ if uploaded_file:
         .btn-torch {{ background: #f59e0b; color: black; }}
         .btn-flip {{ background: #0ea5e9; }}
         .btn-max {{ background: #ec4899; }}
+        .btn-rec {{ background: #ef4444; }}
+        .btn-rec.recording {{ background: #fff; color: #ef4444; animation: pulse 1s infinite; }}
+        
+        @keyframes pulse {{
+            0% {{ box-shadow: 0 0 0 0 rgba(255, 255, 255, 0.7); }}
+            70% {{ box-shadow: 0 0 0 10px rgba(255, 255, 255, 0); }}
+            100% {{ box-shadow: 0 0 0 0 rgba(255, 255, 255, 0); }}
+        }}
         
         input[type=range] {{ width: 100%; accent-color: #8E2DE2; }}
         label {{ font-size: 12px; color: #cbd5e1; }}
@@ -270,17 +278,18 @@ if uploaded_file:
                 </div>
             </div>
             
-            <!-- Row 2: Flips -->
+            <!-- Row 2: Flips & Max -->
             <div class="row">
                 <button class="btn-flip" onclick="flip('h')">↔ Flip H</button>
                 <button class="btn-flip" onclick="flip('v')">↕ Flip V</button>
+                <button class="btn-max" onclick="toggleFullScreen()">⛶ Max</button>
             </div>
             
             <!-- Row 3: Tools -->
             <div class="row">
                 <button class="btn-lock" onclick="toggleLock()">🔒 Lock</button>
                 <button class="btn-torch" onclick="toggleTorch()">🔦 Light</button>
-                <button class="btn-max" onclick="toggleFullScreen()">⛶ Max</button>
+                <button class="btn-rec" onclick="toggleRecord()">🔴 Record</button>
             </div>
         </div>
     </div>
@@ -293,6 +302,11 @@ if uploaded_file:
         let stream = null;
         let scaleX = 1; 
         let scaleY = 1;
+        
+        // Recording Vars
+        let mediaRecorder;
+        let recordedChunks = [];
+        let isRecording = false;
 
         // Camera Init
         navigator.mediaDevices.getUserMedia({{ video: {{ facingMode: 'environment' }} }}).then(s => {{
@@ -355,6 +369,45 @@ if uploaded_file:
             }} else {{
                 container.classList.remove('fullscreen');
                 document.querySelector('.btn-max').innerText = "⛶ Max";
+            }}
+        }}
+        
+        function toggleRecord() {{
+            const btn = document.querySelector('.btn-rec');
+            if (!isRecording) {{
+                // Start Recording
+                recordedChunks = [];
+                // Record the camera stream
+                mediaRecorder = new MediaRecorder(stream, {{ mimeType: 'video/webm' }});
+                
+                mediaRecorder.ondataavailable = function(event) {{
+                    if (event.data.size > 0) {{
+                        recordedChunks.push(event.data);
+                    }}
+                }};
+                
+                mediaRecorder.onstop = function() {{
+                    const blob = new Blob(recordedChunks, {{ type: 'video/webm' }});
+                    const url = URL.createObjectURL(blob);
+                    const a = document.createElement('a');
+                    document.body.appendChild(a);
+                    a.style = 'display: none';
+                    a.href = url;
+                    a.download = 'glass_canvas_recording.webm';
+                    a.click();
+                    window.URL.revokeObjectURL(url);
+                }};
+                
+                mediaRecorder.start();
+                isRecording = true;
+                btn.innerText = "⬛ Stop";
+                btn.classList.add('recording');
+            }} else {{
+                // Stop Recording
+                mediaRecorder.stop();
+                isRecording = false;
+                btn.innerText = "🔴 Record";
+                btn.classList.remove('recording');
             }}
         }}
     </script>
